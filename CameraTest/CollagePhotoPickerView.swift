@@ -167,7 +167,7 @@ struct PhotoDropDelegate: DropDelegate {
     private func determineDropIndex(info: DropInfo) -> Int {
         // This is a simplified logic. For precise placement, you'd need to calculate the exact index
         // based on the drop location relative to the visible cells.
-        let location = info.location
+        _ = info.location
         // For now, let's just assume dropping before or after current image based on x-coordinate
         return currentImageIndex
     }

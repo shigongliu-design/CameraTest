@@ -16,36 +16,38 @@ struct LayoutRecommendationView: View {
                 
                 ScrollView {
                     // First Card: Recommended Layout
-                    VStack {
-                        Text("⭐ 推荐")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.yellow.opacity(0.8))
-                            .cornerRadius(5)
-                            .offset(x: -UIScreen.main.bounds.width / 2 + 50, y: 10) // Adjust position
-                        
-                        Image(systemName: "rectangle.split.3x3.fill") // Placeholder for large layout preview
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 200)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(10)
+                    GeometryReader { geometry in
+                        VStack {
+                            Text("⭐ 推荐")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.yellow.opacity(0.8))
+                                .cornerRadius(5)
+                                .offset(x: -geometry.size.width / 2 + 50, y: 10) // Adjust position
+                            
+                            Image(systemName: "rectangle.split.3x3.fill") // Placeholder for large layout preview
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 200)
+                                .background(Color.gray.opacity(0.2))
+                                .cornerRadius(10)
+                                .padding(.horizontal)
+                            
+                            Button(action: {
+                                // Action to use this layout
+                                showCollageEditor = true
+                            }) {
+                                Text("使用此布局")
+                                    .font(.title2)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(15)
+                            }
                             .padding(.horizontal)
-                        
-                        Button(action: {
-                            // Action to use this layout
-                            showCollageEditor = true
-                        }) {
-                            Text("使用此布局")
-                                .font(.title2)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(15)
                         }
-                        .padding(.horizontal)
                     }
                     .padding(.bottom, 30)
                     
