@@ -66,7 +66,9 @@ struct ContentView: View {
                                 .cornerRadius(15)
                         }
                         .sheet(isPresented: $showingCollagePhotoPicker) {
-                            CollagePhotoPickerView()
+                            NavigationView {
+                                CollagePhotoPickerView()
+                            }
                         }
                     }
                     .padding(.horizontal)
