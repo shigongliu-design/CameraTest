@@ -7,9 +7,8 @@ import Combine
 class PlacedImage: Identifiable, ObservableObject {
     let id = UUID()
     let image: UIImage
-    // Positions and sizes are now relative to the canvas size
     @Published var relativePosition: UnitPoint
-    @Published var relativeWidth: CGFloat = 0.3 // Default to 30% of canvas width
+    @Published var relativeWidth: CGFloat = 0.3
     @Published var rotation: Angle = .zero
 
     init(image: UIImage, relativePosition: UnitPoint) {
@@ -48,15 +47,18 @@ class ImageSaver: NSObject {
     }
 }
 
-// --- Reusable Canvas View (now uses relative coordinates) ---
+// --- Reusable Canvas View ---
 struct CanvasView: View {
-    let placedImages: [PlacedImage]
+    @Binding var placedImages: [PlacedImage]
     let background: BackgroundTemplate?
     let size: CGSize
+    
+    // Dictionary to track the drag offset for each individual image
+    @State private var dragOffsets: [UUID: CGSize] = [:]
 
     var body: some View {
         ZStack {
-            // Layer 1: Programmatic Background
+            // Layer 1: Background
             if let background = background {
                 background.color.opacity(0.2)
                 Image(systemName: background.symbolName)
@@ -69,15 +71,40 @@ struct CanvasView: View {
 
             // Layer 2: Placed Images
             ForEach(placedImages) { placedImage in
+                let dragGesture = DragGesture()
+                    .onChanged { value in
+                        self.dragOffsets[placedImage.id] = value.translation
+                    }
+                    .onEnded { value in
+                        // Remove the temporary offset
+                        self.dragOffsets[placedImage.id] = .zero
+                        
+                        // Find the index of the image being dragged
+                        guard let imageIndex = self.placedImages.firstIndex(where: { $0.id == placedImage.id }) else { return }
+                        
+                        // Calculate the final relative position change
+                        let relativeDrag = CGSize(
+                            width: value.translation.width / self.size.width,
+                            height: value.translation.height / self.size.height
+                        )
+                        
+                        // Update the model's relative position
+                        self.placedImages[imageIndex].relativePosition.x += relativeDrag.width
+                        self.placedImages[imageIndex].relativePosition.y += relativeDrag.height
+                    }
+
+                let offset = self.dragOffsets[placedImage.id] ?? .zero
+                
                 Image(uiImage: placedImage.image)
                     .resizable()
                     .scaledToFit()
                     .frame(width: placedImage.relativeWidth * size.width)
                     .rotationEffect(placedImage.rotation)
                     .position(
-                        x: placedImage.relativePosition.x * size.width,
-                        y: placedImage.relativePosition.y * size.height
+                        x: (placedImage.relativePosition.x * self.size.width) + offset.width,
+                        y: (placedImage.relativePosition.y * self.size.height) + offset.height
                     )
+                    .gesture(dragGesture)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -115,13 +142,13 @@ struct FreeCollageView: View {
     var body: some View {
         VStack {
             GeometryReader { geometry in
-                CanvasView(placedImages: placedImages, background: selectedBackground, size: geometry.size)
+                // CanvasView now needs a Binding to placedImages so it can modify it
+                CanvasView(placedImages: $placedImages, background: selectedBackground, size: geometry.size)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(10)
                     .clipped()
                     .dropDestination(for: UIImage.self) { items, location in
                         guard let droppedImage = items.first else { return false }
-                        // Calculate relative position on drop
                         let relativePosition = UnitPoint(
                             x: location.x / geometry.size.width,
                             y: location.y / geometry.size.height
@@ -197,11 +224,9 @@ struct FreeCollageView: View {
     
     @MainActor
     private func renderAndSaveImage() {
-        // IMPORTANT: For saving to work, you must add a key to Info.plist:
-        // "Privacy - Photo Library Additions Usage Description" with a reason.
-        
         let exportSize = CGSize(width: 1024, height: 1024)
-        let viewToRender = CanvasView(placedImages: placedImages, background: selectedBackground, size: exportSize)
+        // We pass a copy of placedImages for rendering to avoid binding issues
+        let viewToRender = CanvasView(placedImages: .constant(placedImages), background: selectedBackground, size: exportSize)
 
         let renderer = ImageRenderer(content: viewToRender)
         renderer.scale = 2.0
