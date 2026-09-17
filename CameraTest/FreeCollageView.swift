@@ -7,13 +7,14 @@ import Combine
 class PlacedImage: Identifiable, ObservableObject {
     let id = UUID()
     let image: UIImage
-    @Published var position: CGPoint
-    @Published var scale: CGFloat = 1.0
+    // Positions and sizes are now relative to the canvas size
+    @Published var relativePosition: UnitPoint
+    @Published var relativeWidth: CGFloat = 0.3 // Default to 30% of canvas width
     @Published var rotation: Angle = .zero
 
-    init(image: UIImage, position: CGPoint) {
+    init(image: UIImage, relativePosition: UnitPoint) {
         self.image = image
-        self.position = position
+        self.relativePosition = relativePosition
     }
 }
 
@@ -47,10 +48,11 @@ class ImageSaver: NSObject {
     }
 }
 
-// --- Reusable Canvas View ---
+// --- Reusable Canvas View (now uses relative coordinates) ---
 struct CanvasView: View {
     let placedImages: [PlacedImage]
     let background: BackgroundTemplate?
+    let size: CGSize
 
     var body: some View {
         ZStack {
@@ -58,11 +60,11 @@ struct CanvasView: View {
             if let background = background {
                 background.color.opacity(0.2)
                 Image(systemName: background.symbolName)
-                    .font(.system(size: 200))
+                    .font(.system(size: size.width * 0.4))
                     .foregroundColor(background.color.opacity(0.3))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Color.white // Use a solid white background for export if no theme is selected
+                Color.white
             }
 
             // Layer 2: Placed Images
@@ -70,11 +72,15 @@ struct CanvasView: View {
                 Image(uiImage: placedImage.image)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 150 * placedImage.scale)
+                    .frame(width: placedImage.relativeWidth * size.width)
                     .rotationEffect(placedImage.rotation)
-                    .position(placedImage.position)
+                    .position(
+                        x: placedImage.relativePosition.x * size.width,
+                        y: placedImage.relativePosition.y * size.height
+                    )
             }
         }
+        .frame(width: size.width, height: size.height)
     }
 }
 
@@ -97,7 +103,6 @@ struct FreeCollageView: View {
     @State private var placedImages: [PlacedImage] = []
     @State private var selectedBackground: BackgroundTemplate? = nil
     
-    // State for save operation
     @State private var showAlert = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
@@ -109,15 +114,19 @@ struct FreeCollageView: View {
 
     var body: some View {
         VStack {
-            // The Canvas
             GeometryReader { geometry in
-                CanvasView(placedImages: placedImages, background: selectedBackground)
-                    .background(Color.gray.opacity(0.1)) // Visual background for the editor
+                CanvasView(placedImages: placedImages, background: selectedBackground, size: geometry.size)
+                    .background(Color.gray.opacity(0.1))
                     .cornerRadius(10)
                     .clipped()
                     .dropDestination(for: UIImage.self) { items, location in
                         guard let droppedImage = items.first else { return false }
-                        let newPlacedImage = PlacedImage(image: droppedImage, position: location)
+                        // Calculate relative position on drop
+                        let relativePosition = UnitPoint(
+                            x: location.x / geometry.size.width,
+                            y: location.y / geometry.size.height
+                        )
+                        let newPlacedImage = PlacedImage(image: droppedImage, relativePosition: relativePosition)
                         placedImages.append(newPlacedImage)
                         return true
                     }
@@ -191,11 +200,11 @@ struct FreeCollageView: View {
         // IMPORTANT: For saving to work, you must add a key to Info.plist:
         // "Privacy - Photo Library Additions Usage Description" with a reason.
         
-        let viewToRender = CanvasView(placedImages: placedImages, background: selectedBackground)
-            .frame(width: 1024, height: 1024) // Define a fixed export resolution
+        let exportSize = CGSize(width: 1024, height: 1024)
+        let viewToRender = CanvasView(placedImages: placedImages, background: selectedBackground, size: exportSize)
 
         let renderer = ImageRenderer(content: viewToRender)
-        renderer.scale = 2.0 // Render at 2x for better quality
+        renderer.scale = 2.0
         
         guard let image = renderer.uiImage else {
             alertTitle = "错误"
