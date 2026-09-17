@@ -122,15 +122,15 @@ struct FreeCollageView: View {
         // ... (template definitions remain the same)
         if number == 1 {
             self.puzzleCells = [
-                PuzzleCell(frame: CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.75, y: 0.25, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.25, y: 0.75, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.75, y: 0.75, width: 0.5, height: 0.5), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0.5, y: 0, width: 0.5, height: 0.5), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0, y: 0.5, width: 0.5, height: 0.5), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0.5, y: 0.5, width: 0.5, height: 0.5), shape: .square),
             ]
         } else {
             self.puzzleCells = [
-                PuzzleCell(frame: CGRect(x: 0.5, y: 0.3, width: 0.8, height: 0.4), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.5, y: 0.75, width: 0.8, height: 0.4), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.4), shape: .square),
+                PuzzleCell(frame: CGRect(x: 0.1, y: 0.55, width: 0.8, height: 0.4), shape: .square),
             ]
         }
     }

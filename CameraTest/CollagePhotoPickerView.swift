@@ -32,7 +32,7 @@ struct CollagePhotoPickerView: View {
             Spacer()
 
             if selectedImagesData.count >= 2 {
-                NavigationLink(destination: LayoutRecommendationView(selectedImagesData: selectedImagesData)) {
+                NavigationLink(destination: FreeCollageView(selectedImagesData: selectedImagesData)) {
                     Text("下一步")
                         .font(.title2)
                         .padding()
