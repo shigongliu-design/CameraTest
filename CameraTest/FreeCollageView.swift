@@ -2,104 +2,61 @@
 import SwiftUI
 import Combine
 
-// --- Data Model and Cell View ---
-class PuzzleCell: Identifiable, ObservableObject {
+// --- Data Model for a freely placed image ---
+class PlacedImage: Identifiable, ObservableObject {
     let id = UUID()
-    var frame: CGRect // Using CGRect for relative positioning within a 0-1 space
-    var shape: MaskShape
-    @Published var image: UIImage? = nil
+    let image: UIImage
+    @Published var position: CGPoint
+    @Published var scale: CGFloat = 1.0
+    @Published var rotation: Angle = .zero
 
-    init(frame: CGRect, shape: MaskShape, image: UIImage? = nil) {
-        self.frame = frame
-        self.shape = shape
+    init(image: UIImage, position: CGPoint) {
         self.image = image
+        self.position = position
     }
 }
 
-enum MaskShape: String, CaseIterable, Identifiable {
-    case square, circle
-    var id: String { self.rawValue }
-
-    func path(in rect: CGRect) -> Path {
-        switch self {
-        case .square:
-            return Path(rect)
-        case .circle:
-            return Path(ellipseIn: rect)
-        }
-    }
-}
-
-// --- Cell View ---
-struct PuzzleCellView: View {
-    @ObservedObject var cell: PuzzleCell
-    let geometry: GeometryProxy
-
-    var body: some View {
-        let cellWidth = cell.frame.width * geometry.size.width
-        let cellHeight = cell.frame.height * geometry.size.height
-        
-        ZStack {
-            if let image = cell.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: cellWidth, height: cellHeight)
-            } else {
-                Color.gray.opacity(0.3)
-            }
-        }
-        .clipShape(cell.shape.path(in: CGRect(x: 0, y: 0, width: cellWidth, height: cellHeight)))
-        .frame(width: cellWidth, height: cellHeight)
-        .position(x: cell.frame.midX * geometry.size.width, y: cell.frame.midY * geometry.size.height)
-        .contentShape(cell.shape.path(in: CGRect(x: 0, y: 0, width: cellWidth, height: cellHeight)))
-    }
-}
-
-// --- Main Collage View ---
+// --- The Main View, now a true free-form canvas ---
 struct FreeCollageView: View {
     let selectedImagesData: [Data]
     @State private var images: [UIImage]
-    @State private var puzzleCells: [PuzzleCell]
+    @State private var placedImages: [PlacedImage] = []
 
     init(selectedImagesData: [Data]) {
         self.selectedImagesData = selectedImagesData
         _images = State(initialValue: selectedImagesData.compactMap { UIImage(data: $0) })
-        _puzzleCells = State(initialValue: [])
     }
 
     var body: some View {
         VStack {
-            // Template Browser
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 15) {
-                    Button("Apply Template 1") { applyTemplate(1) }
-                    Button("Apply Template 2") { applyTemplate(2) }
-                }
-                .padding()
-            }
-
-            // Puzzle Canvas
+            // The Canvas - now the entire ZStack is a drop target
             GeometryReader { geometry in
                 ZStack {
+                    // Background of the canvas
                     Rectangle()
                         .fill(Color.gray.opacity(0.1))
                         .cornerRadius(10)
 
-                    ForEach(puzzleCells) { cell in
-                        PuzzleCellView(cell: cell, geometry: geometry)
-                            .dropDestination(for: UIImage.self) { items, location in
-                                guard let droppedImage = items.first else { return false }
-                                // Directly update the image on the cell object
-                                cell.image = droppedImage
-                                return true
-                            }
+                    // Render all the images that have been placed
+                    ForEach(placedImages) { placedImage in
+                        Image(uiImage: placedImage.image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 150) // A default size for dropped images
+                            .position(placedImage.position)
                     }
+                }
+                .dropDestination(for: UIImage.self) { items, location in
+                    guard let droppedImage = items.first else { return false }
+                    // Create a new PlacedImage at the drop location and add it to our array
+                    let newPlacedImage = PlacedImage(image: droppedImage, position: location)
+                    placedImages.append(newPlacedImage)
+                    return true
                 }
             }
             .padding()
 
-            // Photo Gallery
+            // Photo Gallery at the bottom
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
                     ForEach(images, id: \.self) { image in
@@ -107,32 +64,16 @@ struct FreeCollageView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: 100)
+                            .cornerRadius(8)
+                            .shadow(radius: 3)
                             .draggable(image)
                     }
                 }
                 .padding()
             }
+            .frame(height: 120)
         }
-        .navigationTitle("手工拼图")
+        .navigationTitle("自由拼图")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: { applyTemplate(1) })
     }
-
-    private func applyTemplate(_ number: Int) {
-        // ... (template definitions remain the same)
-        if number == 1 {
-            self.puzzleCells = [
-                PuzzleCell(frame: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.5, y: 0, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0, y: 0.5, width: 0.5, height: 0.5), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.5, y: 0.5, width: 0.5, height: 0.5), shape: .square),
-            ]
-        } else {
-            self.puzzleCells = [
-                PuzzleCell(frame: CGRect(x: 0.1, y: 0.05, width: 0.8, height: 0.4), shape: .square),
-                PuzzleCell(frame: CGRect(x: 0.1, y: 0.55, width: 0.8, height: 0.4), shape: .square),
-            ]
-        }
-    }
-
 }
