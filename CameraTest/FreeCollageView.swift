@@ -1,21 +1,15 @@
-
 import SwiftUI
 import Combine
 
 // --- Data Models ---
 
-class PlacedImage: Identifiable, ObservableObject {
+struct PlacedImage: Identifiable {
     let id = UUID()
     let image: UIImage
-    @Published var relativePosition: UnitPoint
-    @Published var relativeWidth: CGFloat = 0.3
-    @Published var rotation: Angle = .zero
-    @Published var shape: CollageShape = .rectangle
-
-    init(image: UIImage, relativePosition: UnitPoint) {
-        self.image = image
-        self.relativePosition = relativePosition
-    }
+    var relativePosition: UnitPoint
+    var relativeWidth: CGFloat = 0.3
+    var rotation: Angle = .zero
+    var shape: CollageShape = .rectangle
 }
 
 struct BackgroundTemplate: Identifiable, Hashable {
@@ -122,7 +116,7 @@ struct CanvasView: View {
     @Binding var selectedImageId: UUID?
     let background: BackgroundTemplate?
     let size: CGSize
-    
+
     @State private var dragOffsets: [UUID: CGSize] = [:]
     @State private var rotations: [UUID: Angle] = [:]
     @State private var scales: [UUID: CGFloat] = [:]
@@ -214,6 +208,16 @@ struct FreeCollageView: View {
         _images = State(initialValue: selectedImagesData.compactMap { UIImage(data: $0) })
     }
 
+    private func shape(for collageShape: CollageShape) -> AnyShape {
+        switch collageShape {
+        case .rectangle: return AnyShape(Rectangle())
+        case .circle:    return AnyShape(Circle())
+        case .star:      return AnyShape(Star(points: 5, smoothness: 0.4))
+        case .heart:     return AnyShape(Heart())
+        case .hexagon:   return AnyShape(Hexagon())
+        }
+    }
+    
     var body: some View {
         VStack {
             GeometryReader { geometry in
@@ -236,7 +240,13 @@ struct FreeCollageView: View {
                         HStack(spacing: 15) {
                             ForEach(CollageShape.allCases) { shape in
                                 Button(action: { if let index = selectedImageIndex { placedImages[index].shape = shape } }) {
-                                    Image(systemName: shape.rawValue).font(.title2).foregroundColor(.primary).frame(width: 60, height: 50).background(Color.white).cornerRadius(10).shadow(radius: 2)
+                                    ZStack {
+                                        self.shape(for: shape)
+                                            .fill(Color(white: 0.9))
+                                        self.shape(for: shape)
+                                            .stroke(Color.gray, lineWidth: 1)
+                                    }
+                                    .frame(width: 44, height: 44)
                                 }
                             }
                         }.padding(.horizontal)
