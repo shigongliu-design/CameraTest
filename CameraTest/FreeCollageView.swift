@@ -167,8 +167,9 @@ struct CanvasView: View {
                     .resizable().scaledToFill()
                     .frame(width: (placedImage.relativeWidth * self.size.width) * scaleEffect, height: (placedImage.relativeWidth * self.size.width) * scaleEffect)
                     .clipShape(shape(for: placedImage.shape))
-                    .rotationEffect(placedImage.rotation + rotationAngle)
+                    // CORRECTED ORDER: Overlay first, then rotate.
                     .overlay(shape(for: placedImage.shape).stroke(Color.blue, lineWidth: selectedImageId == placedImage.id ? 3 : 0))
+                    .rotationEffect(placedImage.rotation + rotationAngle)
                     .position(x: (placedImage.relativePosition.x * self.size.width) + dragOffset.width, y: (placedImage.relativePosition.y * self.size.height) + dragOffset.height)
                     .gesture(combinedGesture)
                     .onTapGesture { selectedImageId = placedImage.id }
