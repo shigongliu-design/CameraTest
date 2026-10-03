@@ -5,7 +5,7 @@ import Combine
 
 struct PlacedImage: Identifiable {
     let id = UUID()
-    let image: UIImage
+    var image: UIImage
     var relativePosition: UnitPoint
     var relativeWidth: CGFloat = 0.3
     var rotation: Angle = .zero
@@ -114,6 +114,7 @@ class ImageSaver: NSObject {
 struct CanvasView: View {
     @Binding var placedImages: [PlacedImage]
     @Binding var selectedImageId: UUID?
+    @Binding var showCropView: Bool
     let background: BackgroundTemplate?
     let size: CGSize
 
@@ -172,7 +173,10 @@ struct CanvasView: View {
                     .rotationEffect(placedImage.rotation + rotationAngle)
                     .position(x: (placedImage.relativePosition.x * self.size.width) + dragOffset.width, y: (placedImage.relativePosition.y * self.size.height) + dragOffset.height)
                     .gesture(combinedGesture)
-                    .onTapGesture { selectedImageId = placedImage.id }
+                    .onTapGesture { 
+                        selectedImageId = placedImage.id
+                        showCropView = true
+                    }
             }
         }
         .frame(width: size.width, height: size.height)
@@ -199,6 +203,7 @@ struct FreeCollageView: View {
     @State private var selectedImageId: UUID? = nil
     
     @State private var showAlert = false
+    @State private var showCropView = false
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     
@@ -222,7 +227,7 @@ struct FreeCollageView: View {
     var body: some View {
         VStack {
             GeometryReader { geometry in
-                CanvasView(placedImages: $placedImages, selectedImageId: $selectedImageId, background: selectedBackground, size: geometry.size)
+                CanvasView(placedImages: $placedImages, selectedImageId: $selectedImageId, showCropView: $showCropView, background: selectedBackground, size: geometry.size)
                     .background(Color.gray.opacity(0.1)).cornerRadius(10).clipped()
                     .dropDestination(for: UIImage.self) { items, location in
                         guard let droppedImage = items.first else { return false }
@@ -289,12 +294,25 @@ struct FreeCollageView: View {
         .alert(isPresented: $showAlert) {
             Alert(title: Text(alertTitle), message: Text(alertMessage), dismissButton: .default(Text("好的")))
         }
+          .sheet(isPresented: $showCropView) {
+            if let selectedImageIndex = selectedImageIndex {
+                let imageToCrop = placedImages[selectedImageIndex].image
+                SwiftyCropView(image: imageToCrop, maskShape: .square, config: SwiftyCropConfig(onCrop: { croppedImage in
+                    if let croppedImage = croppedImage {
+                        placedImages[selectedImageIndex].image = croppedImage
+                        let imageSaver = PhotoSaver()
+                        imageSaver.writeToPhotoAlbum(image: croppedImage)
+                    }
+                    showCropView = false
+                }))
+            }
+        }
     }
-    
+
     @MainActor
     private func renderAndSaveImage() {
         let exportSize = CGSize(width: 1024, height: 1024)
-        let viewToRender = CanvasView(placedImages: .constant(placedImages), selectedImageId: .constant(nil), background: selectedBackground, size: exportSize)
+        let viewToRender = CanvasView(placedImages: .constant(placedImages), selectedImageId: .constant(nil), showCropView: .constant(false), background: selectedBackground, size: exportSize)
         let renderer = ImageRenderer(content: viewToRender)
         renderer.scale = 2.0
         guard let image = renderer.uiImage else { alertTitle = "错误"; alertMessage = "无法生成图片。"; showAlert = true; return }
