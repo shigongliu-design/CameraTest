@@ -63,21 +63,7 @@ struct PhotoPickerView: View {
                     .padding(5)
                 }
                 
-                Button(action: {
-                    if let selectedImage = selectedImage {
-                        sheetView = .crop(selectedImage)
-                    }
-                }) {
-                    Text("下一步")
-                        .font(.title2)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(selectedImageData.isEmpty ? Color.gray : Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(15)
-                }
-                .disabled(selectedImageData.isEmpty)
-                .padding()
+
                 .sheet(item: $sheetView) { item in
                     switch item {
                     case .crop(let image):
@@ -85,8 +71,8 @@ struct PhotoPickerView: View {
                             if let croppedImage = croppedImage {
                                 let imageSaver = PhotoSaver()
                                 imageSaver.writeToPhotoAlbum(image: croppedImage)
-                                self.sheetView = .process(Image(uiImage: croppedImage))
                             }
+                            presentationMode.wrappedValue.dismiss()
                         }))
                     case .process(let image):
                         AIProcessingView(selectedImage: image)
@@ -107,9 +93,8 @@ struct PhotoPickerView: View {
                 selectedImageData.removeAll()
                 for item in selectedItems {
                     if let data = try? await item.loadTransferable(type: Data.self) {
-                        selectedImageData.append(data)
                         if let uiImage = UIImage(data: data) {
-                            selectedImage = uiImage
+                            sheetView = .crop(uiImage)
                         }
                     }
                 }
