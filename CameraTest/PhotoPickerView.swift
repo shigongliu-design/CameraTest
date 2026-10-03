@@ -5,7 +5,8 @@ struct PhotoPickerView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var selectedImageData: [Data] = []
-    @State private var navigateToAIProcessing = false
+    @State private var sheetView: SheetView?
+    @State private var selectedImage: UIImage? = nil
     @State private var processedImage: Image? = nil
     
     let selectionLimit: Int // 1 for single, >1 for multi
@@ -63,12 +64,8 @@ struct PhotoPickerView: View {
                 }
                 
                 Button(action: {
-                    if mode == .aiBeautify, let imageData = selectedImageData.first, let uiImage = UIImage(data: imageData) {
-                        processedImage = Image(uiImage: uiImage)
-                        navigateToAIProcessing = true
-                    } else {
-                        // Action for Collage or other modes
-                        presentationMode.wrappedValue.dismiss()
+                    if let selectedImage = selectedImage {
+                        sheetView = .crop(selectedImage)
                     }
                 }) {
                     Text("下一步")
@@ -81,8 +78,17 @@ struct PhotoPickerView: View {
                 }
                 .disabled(selectedImageData.isEmpty)
                 .padding()
-                .sheet(isPresented: $navigateToAIProcessing) {
-                    if let image = processedImage {
+                .sheet(item: $sheetView) { item in
+                    switch item {
+                    case .crop(let image):
+                        SwiftyCropView(image: image, maskShape: .square, config: SwiftyCropConfig(onCrop: { croppedImage in
+                            if let croppedImage = croppedImage {
+                                let imageSaver = PhotoSaver()
+                                imageSaver.writeToPhotoAlbum(image: croppedImage)
+                                self.sheetView = .process(Image(uiImage: croppedImage))
+                            }
+                        }))
+                    case .process(let image):
                         AIProcessingView(selectedImage: image)
                     }
                 }
@@ -102,6 +108,9 @@ struct PhotoPickerView: View {
                 for item in selectedItems {
                     if let data = try? await item.loadTransferable(type: Data.self) {
                         selectedImageData.append(data)
+                        if let uiImage = UIImage(data: data) {
+                            selectedImage = uiImage
+                        }
                     }
                 }
             }

@@ -15,9 +15,18 @@ struct AIBeautyEditorView: View {
     @State private var selectedTab: Int = 0 // 0: AI 美化, 1: 美颜, 2: 调整, 3: 滤镜
     @State private var showExportView = false
     
+    @State private var isShowingSaveConfirmation = false
+
     init(image: Image) {
         _originalImage = State(initialValue: image)
         _processedImage = State(initialValue: image) // Initialize processed image with original
+    }
+
+    private func saveImage() {
+        guard let uiImage = processedImage.asUIImage() else { return }
+        let imageSaver = PhotoSaver()
+        imageSaver.writeToPhotoAlbum(image: uiImage)
+        isShowingSaveConfirmation = true
     }
     
     var body: some View {
@@ -35,12 +44,18 @@ struct AIBeautyEditorView: View {
                     .font(.headline)
                 Spacer()
                 Button(action: {
-                    // Action for Save
-                    showExportView = true
+                    saveImage()
                 }) {
                     Text("保存")
                         .font(.body)
                         .fontWeight(.bold)
+                }
+                .alert(isPresented: $isShowingSaveConfirmation) {
+                    Alert(
+                        title: Text("保存成功"),
+                        message: Text("照片已保存到你的相册"),
+                        dismissButton: .default(Text("好的"))
+                    )
                 }
             }
             .padding()
