@@ -1,0 +1,4 @@
+
+# Core ML models are large (LaMa is ~217 MB); keep them out of git or use Git LFS
+*.mlpackage/
+*.mlmodel

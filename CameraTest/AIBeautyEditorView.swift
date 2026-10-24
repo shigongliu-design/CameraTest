@@ -1,177 +1,465 @@
 import SwiftUI
-import CoreImage
-import CoreImage.CIFilterBuiltins
-import UIKit // Import UIKit for UIImage and UIHostingController
+import UIKit
 
-struct AIBeautyEditorView: View {
-    @Environment(\.presentationMode) var presentationMode
-    @State private var originalImage: Image
-    @State private var processedImage: Image
-    @State private var aiBeautyIntensity: Double = 50.0 {
-        didSet {
-            applyMockAIBeautyEffect()
+// MARK: - Editor tabs & controls
+
+enum EditorTab: String, CaseIterable, Identifiable {
+    case ai = "AI 美化"
+    case beauty = "美颜"
+    case adjust = "调整"
+    case filter = "滤镜"
+    var id: String { rawValue }
+}
+
+enum BeautyControl: String, CaseIterable, Identifiable {
+    case smoothing, whitening, rosy, acne, darkCircles
+    case slimFace, bigEyes, nose, chin
+
+    var id: String { rawValue }
+
+    static let skin: [BeautyControl] = [.smoothing, .whitening, .rosy, .acne, .darkCircles]
+    static let shape: [BeautyControl] = [.slimFace, .bigEyes, .nose, .chin]
+
+    var title: String {
+        switch self {
+        case .smoothing: return "磨皮"
+        case .whitening: return "美白"
+        case .rosy: return "红润"
+        case .acne: return "祛痘"
+        case .darkCircles: return "黑眼圈"
+        case .slimFace: return "瘦脸"
+        case .bigEyes: return "大眼"
+        case .nose: return "鼻型"
+        case .chin: return "下巴"
         }
     }
-    @State private var selectedTab: Int = 0 // 0: AI 美化, 1: 美颜, 2: 调整, 3: 滤镜
-    @State private var showExportView = false
-    
+
+    var icon: String {
+        switch self {
+        case .smoothing: return "drop"
+        case .whitening: return "sun.max"
+        case .rosy: return "heart"
+        case .acne: return "bandage"
+        case .darkCircles: return "eye"
+        case .slimFace: return "person.crop.circle"
+        case .bigEyes: return "eye.circle"
+        case .nose: return "triangle"
+        case .chin: return "chevron.down.circle"
+        }
+    }
+
+    var keyPath: WritableKeyPath<BeautyParameters, Double> {
+        switch self {
+        case .smoothing: return \.smoothing
+        case .whitening: return \.whitening
+        case .rosy: return \.rosy
+        case .acne: return \.acne
+        case .darkCircles: return \.darkCircles
+        case .slimFace: return \.slimFace
+        case .bigEyes: return \.bigEyes
+        case .nose: return \.nose
+        case .chin: return \.chin
+        }
+    }
+}
+
+enum AdjustControl: String, CaseIterable, Identifiable {
+    case brightness, contrast, saturation, warmth, sharpen, vignette
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .brightness: return "亮度"
+        case .contrast: return "对比度"
+        case .saturation: return "饱和度"
+        case .warmth: return "色温"
+        case .sharpen: return "锐化"
+        case .vignette: return "暗角"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .brightness: return "sun.max"
+        case .contrast: return "circle.lefthalf.filled"
+        case .saturation: return "drop.halffull"
+        case .warmth: return "thermometer.medium"
+        case .sharpen: return "triangle"
+        case .vignette: return "circle.dashed"
+        }
+    }
+
+    var range: ClosedRange<Double> {
+        switch self {
+        case .sharpen, .vignette: return 0...100
+        default: return -100...100
+        }
+    }
+
+    var keyPath: WritableKeyPath<BeautyParameters, Double> {
+        switch self {
+        case .brightness: return \.brightness
+        case .contrast: return \.contrast
+        case .saturation: return \.saturation
+        case .warmth: return \.warmth
+        case .sharpen: return \.sharpen
+        case .vignette: return \.vignette
+        }
+    }
+}
+
+// MARK: - Editor
+
+struct AIBeautyEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let sourceImage: UIImage
+    private let title: String
+
+    @State private var engine: BeautyEngine?
+    @State private var params = BeautyParameters()
+    @State private var renderedImage: UIImage?
+    @State private var originalPreview: UIImage?
+    @State private var filterThumbnails: [FilterPreset: UIImage] = [:]
+    @State private var renderTask: Task<Void, Never>?
+
+    @State private var selectedTab: EditorTab = .ai
+    @State private var selectedBeauty: BeautyControl = .smoothing
+    @State private var selectedAdjust: AdjustControl = .brightness
+    @State private var isShowingOriginal = false
+    @State private var isSaving = false
     @State private var isShowingSaveConfirmation = false
 
+    init(uiImage: UIImage, initialTab: EditorTab = .ai) {
+        sourceImage = uiImage
+        _selectedTab = State(initialValue: initialTab)
+        // Opened from a quick tool (滤镜 / 调整): start from the untouched photo.
+        if initialTab != .ai {
+            var start = BeautyParameters()
+            start.aiIntensity = 0
+            _params = State(initialValue: start)
+        }
+        title = initialTab == .ai ? "AI 美化" : initialTab.rawValue
+    }
+
+    /// Kept for older call sites. Prefer `init(uiImage:)` so the full-quality photo is used.
     init(image: Image) {
-        _originalImage = State(initialValue: image)
-        _processedImage = State(initialValue: image) // Initialize processed image with original
+        sourceImage = image.asUIImageRendered(size: CGSize(width: 1080, height: 1080)) ?? UIImage()
+        title = "AI 美化"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            preview
+            bottomPanel
+        }
+        .navigationBarHidden(true)
+        .task { await loadEngine() }
+        .onChange(of: params) { scheduleRender() }
+        .alert("保存成功", isPresented: $isShowingSaveConfirmation) {
+            Button("好的", role: .cancel) {}
+        } message: {
+            Text("照片已保存到你的相册")
+        }
+    }
+
+    // MARK: Top bar
+
+    private var topBar: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left").font(.title2)
+            }
+            Spacer()
+            Text(title).font(.headline)
+            Spacer()
+            if isSaving {
+                ProgressView()
+            } else {
+                Button("保存") { saveImage() }
+                    .fontWeight(.bold)
+                    .disabled(engine == nil)
+            }
+        }
+        .padding()
+    }
+
+    // MARK: Preview with before/after
+
+    private var preview: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let image = isShowingOriginal ? originalPreview : renderedImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    ProgressView("正在识别人脸…")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal)
+
+            if engine != nil {
+                Text(isShowingOriginal ? "原图" : "按住对比")
+                    .font(.caption)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(24)
+                    .onLongPressGesture(minimumDuration: 0, perform: {}, onPressingChanged: { pressing in
+                        isShowingOriginal = pressing
+                    })
+            }
+        }
+    }
+
+    // MARK: Bottom panel
+
+    private var bottomPanel: some View {
+        VStack(spacing: 12) {
+            switch selectedTab {
+            case .ai: aiPanel
+            case .beauty: beautyPanel
+            case .adjust: adjustPanel
+            case .filter: filterPanel
+            }
+
+            Picker("", selection: $selectedTab) {
+                ForEach(EditorTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+        }
+        .padding(.vertical, 12)
+        .background(Color.gray.opacity(0.1))
+        .disabled(engine == nil)
+    }
+
+    private var aiPanel: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("AI 美化强度")
+                Spacer()
+                Text("\(Int(params.aiIntensity))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button("重置") { params.aiIntensity = 50 }
+                    .font(.caption)
+            }
+            Slider(value: $params.aiIntensity, in: 0...100, step: 1) {
+                Text("AI 美化强度")
+            } minimumValueLabel: {
+                Text("0").font(.caption)
+            } maximumValueLabel: {
+                Text("100").font(.caption)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private var beautyPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if engine?.hasFaces == false {
+                Label("未检测到人脸，美颜对这张照片无效", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal)
+            }
+
+            valueSlider(title: selectedBeauty.title,
+                        value: binding(for: selectedBeauty.keyPath),
+                        range: 0...100,
+                        reset: { params[keyPath: selectedBeauty.keyPath] = 0 })
+
+            controlRow(title: "肌肤", controls: BeautyControl.skin)
+            controlRow(title: "美型", controls: BeautyControl.shape)
+        }
+    }
+
+    private func controlRow(title: String, controls: [BeautyControl]) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.bold)
+                .frame(width: 32)
+                .padding(.top, 10)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(controls) { control in
+                        chip(title: control.title,
+                             icon: control.icon,
+                             isSelected: selectedBeauty == control,
+                             isActive: params[keyPath: control.keyPath] > 0) {
+                            selectedBeauty = control
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private var adjustPanel: some View {
+        VStack(spacing: 10) {
+            valueSlider(title: selectedAdjust.title,
+                        value: binding(for: selectedAdjust.keyPath),
+                        range: selectedAdjust.range,
+                        reset: { params[keyPath: selectedAdjust.keyPath] = 0 })
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(AdjustControl.allCases) { control in
+                        chip(title: control.title,
+                             icon: control.icon,
+                             isSelected: selectedAdjust == control,
+                             isActive: params[keyPath: control.keyPath] != 0) {
+                            selectedAdjust = control
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private var filterPanel: some View {
+        VStack(spacing: 10) {
+            if params.filter != .original {
+                valueSlider(title: "\(params.filter.title) 强度",
+                            value: $params.filterIntensity,
+                            range: 0...100,
+                            reset: { params.filterIntensity = 100 })
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(FilterPreset.allCases) { preset in
+                        Button {
+                            params.filter = preset
+                        } label: {
+                            VStack(spacing: 4) {
+                                Group {
+                                    if let thumb = filterThumbnails[preset] {
+                                        Image(uiImage: thumb).resizable().scaledToFill()
+                                    } else {
+                                        Color.gray.opacity(0.2)
+                                    }
+                                }
+                                .frame(width: 64, height: 64)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(params.filter == preset ? Color.purple : .clear, lineWidth: 2)
+                                )
+                                Text(preset.title)
+                                    .font(.caption)
+                                    .foregroundStyle(params.filter == preset ? Color.purple : .primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    // MARK: Reusable pieces
+
+    private func valueSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, reset: @escaping () -> Void) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(Int(value.wrappedValue))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button("重置", action: reset)
+                    .font(.caption)
+            }
+            Slider(value: value, in: range, step: 1)
+        }
+        .padding(.horizontal)
+    }
+
+    private func chip(title: String, icon: String, isSelected: Bool, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .background(isSelected ? Color.purple.opacity(0.2) : Color.gray.opacity(0.15))
+                    .clipShape(Circle())
+                    .overlay(alignment: .topTrailing) {
+                        if isActive {
+                            Circle().fill(Color.purple).frame(width: 8, height: 8)
+                        }
+                    }
+                Text(title).font(.caption)
+            }
+            .foregroundStyle(isSelected ? Color.purple : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func binding(for keyPath: WritableKeyPath<BeautyParameters, Double>) -> Binding<Double> {
+        Binding(get: { params[keyPath: keyPath] },
+                set: { params[keyPath: keyPath] = $0 })
+    }
+
+    // MARK: Rendering
+
+    private func loadEngine() async {
+        guard engine == nil else { return }
+        let image = sourceImage
+        let loaded = await Task.detached(priority: .userInitiated) { BeautyEngine(image: image) }.value
+        guard let loaded else { return }
+        engine = loaded
+        originalPreview = UIImage(cgImage: loaded.previewImage)
+        scheduleRender(debounce: false)
+
+        let thumbs = await Task.detached(priority: .utility) { loaded.filterThumbnails() }.value
+        filterThumbnails = thumbs.mapValues { UIImage(cgImage: $0) }
+    }
+
+    private func scheduleRender(debounce: Bool = true) {
+        guard let engine else { return }
+        let current = params
+        renderTask?.cancel()
+        renderTask = Task {
+            if debounce {
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            guard !Task.isCancelled else { return }
+            let output = await Task.detached(priority: .userInitiated) { engine.render(current) }.value
+            guard !Task.isCancelled, let output else { return }
+            renderedImage = UIImage(cgImage: output)
+        }
     }
 
     private func saveImage() {
-        guard let uiImage = processedImage.asUIImage() else { return }
-        let imageSaver = PhotoSaver()
-        imageSaver.writeToPhotoAlbum(image: uiImage)
-        isShowingSaveConfirmation = true
-    }
-    
-    var body: some View {
-        VStack {
-            // Top Bar
-            HStack {
-                Button(action: {
-                    presentationMode.wrappedValue.dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.title2)
-                }
-                Spacer()
-                Text("AI 美化")
-                    .font(.headline)
-                Spacer()
-                Button(action: {
-                    saveImage()
-                }) {
-                    Text("保存")
-                        .font(.body)
-                        .fontWeight(.bold)
-                }
-                .alert(isPresented: $isShowingSaveConfirmation) {
-                    Alert(
-                        title: Text("保存成功"),
-                        message: Text("照片已保存到你的相册"),
-                        dismissButton: .default(Text("好的"))
-                    )
-                }
-            }
-            .padding()
-            
-            // Main Image Preview with Before/After Slider (Placeholder)
-            Spacer()
-            processedImage
-                .resizable()
-                .scaledToFit()
-                .padding(.horizontal)
-            // Placeholder for Before/After Slider
-            Text("Before/After Slider Placeholder")
-                .font(.caption)
-                .padding(.vertical, 5)
-            Spacer()
-            
-            // Bottom Toolbar
-            VStack {
-                Picker("", selection: $selectedTab) {
-                    Text("AI 美化").tag(0)
-                    Text("美颜").tag(1)
-                    Text("调整").tag(2)
-                    Text("滤镜").tag(3)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                
-                if selectedTab == 0 {
-                    // AI 美化 tab content
-                    VStack {
-                        Text("AI 美化强度: \(Int(aiBeautyIntensity))%")
-                        Slider(value: $aiBeautyIntensity, in: 0...100) {
-                            Text("Intensity")
-                        } minimumValueLabel: {
-                            Text("0")
-                        } maximumValueLabel: {
-                            Text("100")
-                        }
-                        .padding(.horizontal)
-                    }
-                } else if selectedTab == 1 {
-                    // 美颜 tab content
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            Text("美颜功能")
-                                .font(.subheadline)
-
-                            // 肌肤 (Skin) controls
-                            Group {
-                                Text("肌肤")
-                                    .font(.callout)
-                                    .fontWeight(.bold)
-                                HStack {
-                                    Button("磨皮") { /* action */ }.buttonStyle(.bordered)
-                                    Button("美白") { /* action */ }.buttonStyle(.bordered)
-                                    Button("红润") { /* action */ }.buttonStyle(.bordered)
-                                    Button("祛痘") { /* action */ }.buttonStyle(.bordered)
-                                    Button("黑眼圈") { /* action */ }.buttonStyle(.bordered)
-                                }
-                                // Example slider for one skin property
-                                Slider(value: .constant(0.5), in: 0...1) { Text("磨皮强度") } minimumValueLabel: { Text("0") } maximumValueLabel: { Text("1") }
-                                    .padding(.horizontal)
-                            }
-
-                            // 美型 (Face Shape) controls
-                            Group {
-                                Text("美型")
-                                    .font(.callout)
-                                    .fontWeight(.bold)
-                                HStack {
-                                    Button("瘦脸") { /* action */ }.buttonStyle(.bordered)
-                                    Button("大眼") { /* action */ }.buttonStyle(.bordered)
-                                    Button("鼻型") { /* action */ }.buttonStyle(.bordered)
-                                    Button("下巴") { /* action */ }.buttonStyle(.bordered)
-                                }
-                                // Example slider for one face shape property
-                                Slider(value: .constant(0.5), in: 0...1) { Text("瘦脸程度") } minimumValueLabel: { Text("0") } maximumValueLabel: { Text("1") }
-                                    .padding(.horizontal)
-                            }
-                        }
-                        .padding(.vertical)
-                    }
-                } else if selectedTab == 2 {
-                    Text("调整功能 (Placeholder)")
-                } else if selectedTab == 3 {
-                    Text("滤镜功能 (Placeholder)")
-                }
-            }
-            .padding(.vertical, 10)
-            .background(Color.gray.opacity(0.1))
-        }
-        .navigationBarHidden(true)
-        .sheet(isPresented: $showExportView) {
-            ExportView(exportedImage: processedImage)
-        }
-        .onAppear(perform: applyMockAIBeautyEffect)
-    }
-    
-    private func applyMockAIBeautyEffect() {
-        guard let uiImage = originalImage.asUIImage() else { return }
-        let context = CIContext()
-        if let ciImage = CIImage(image: uiImage) {
-            guard let filter = CIFilter(name: "CIBrightnessContrast") else { return }
-            filter.setValue(ciImage, forKey: kCIInputImageKey)
-            filter.setValue(Float(aiBeautyIntensity - 50) / 100.0, forKey: kCIInputBrightnessKey)
-            
-            if let outputImage = filter.outputImage,
-               let cgImage = context.createCGImage(outputImage, from: outputImage.extent) {
-                self.processedImage = Image(uiImage: UIImage(cgImage: cgImage))
-            }
+        guard let engine else { return }
+        let current = params
+        isSaving = true
+        Task {
+            let output = await Task.detached(priority: .userInitiated) {
+                engine.render(current, fullResolution: true)
+            }.value
+            isSaving = false
+            guard let output else { return }
+            PhotoSaver().writeToPhotoAlbum(image: UIImage(cgImage: output))
+            isShowingSaveConfirmation = true
         }
     }
 }
 
 struct AIBeautyEditorView_Previews: PreviewProvider {
     static var previews: some View {
-        AIBeautyEditorView(image: Image(systemName: "photo.fill"))
+        AIBeautyEditorView(uiImage: UIImage(systemName: "person.crop.square") ?? UIImage())
     }
 }

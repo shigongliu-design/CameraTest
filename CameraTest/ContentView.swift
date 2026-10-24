@@ -6,14 +6,21 @@
 //
 
 import SwiftUI
+import PhotosUI
+import UIKit
 
 struct ContentView: View {
     @State private var showingPhotoPickerAIBeautify = false
     @State private var showingCollagePhotoPicker = false
 
+    // Home quick tools: same pattern as AI 美化 (a Button with its own sheet).
+    @State private var showingErasePicker = false
+    @State private var showingFilterPicker = false
+    @State private var showingAdjustPicker = false
+
     var body: some View {
         TabView {
-            NavigationView {
+            NavigationStack {
                 VStack {
                     // Top section: Brand name and Settings button
                     HStack {
@@ -76,12 +83,18 @@ struct ContentView: View {
                     // Quick Tools
                     HStack(spacing: 20) {
                         VStack {
-                            Button(action: { /* Action for Erase */ }) {
+                            Button(action: {
+                                print("[QuickTool] 消除 tapped")
+                                showingErasePicker = true
+                            }) {
                                 Image(systemName: "eraser.fill")
                                     .font(.title2)
                                     .frame(width: 50, height: 50)
                                     .background(Color.gray.opacity(0.2))
                                     .cornerRadius(10)
+                            }
+                            .sheet(isPresented: $showingErasePicker) {
+                                PhotoPickerView(selectionLimit: 1, mode: .aiBeautify, openEraser: true)
                             }
                             Text("消除")
                                 .font(.caption)
@@ -98,23 +111,35 @@ struct ContentView: View {
                                 .font(.caption)
                         }
                         VStack {
-                            Button(action: { /* Action for Filter */ }) {
+                            Button(action: {
+                                print("[QuickTool] 滤镜 tapped")
+                                showingFilterPicker = true
+                            }) {
                                 Image(systemName: "camera.filters")
                                     .font(.title2)
                                     .frame(width: 50, height: 50)
                                     .background(Color.gray.opacity(0.2))
                                     .cornerRadius(10)
                             }
+                            .sheet(isPresented: $showingFilterPicker) {
+                                PhotoPickerView(selectionLimit: 1, mode: .aiBeautify, initialTab: .filter)
+                            }
                             Text("滤镜")
                                 .font(.caption)
                         }
                         VStack {
-                            Button(action: { /* Action for Adjust */ }) {
+                            Button(action: {
+                                print("[QuickTool] 调整 tapped")
+                                showingAdjustPicker = true
+                            }) {
                                 Image(systemName: "slider.horizontal.3")
                                     .font(.title2)
                                     .frame(width: 50, height: 50)
                                     .background(Color.gray.opacity(0.2))
                                     .cornerRadius(10)
+                            }
+                            .sheet(isPresented: $showingAdjustPicker) {
+                                PhotoPickerView(selectionLimit: 1, mode: .aiBeautify, initialTab: .adjust)
                             }
                             Text("调整")
                                 .font(.caption)
@@ -150,9 +175,9 @@ struct ContentView: View {
                     Spacer()
                 }
                 .navigationBarHidden(true) // Hide default navigation bar
-                .tabItem {
-                    Label("首页", systemImage: "house.fill")
-                }
+            }
+            .tabItem {
+                Label("首页", systemImage: "house.fill")
             }
 
             MeView()

@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct AIProcessingView: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var processingStep: Int = 0
     @State private var showAIBeautyEditor = false
     @State private var processingFailed = false
-    let selectedImage: Image
+    let selectedImage: UIImage
     
     let processingMessages = [
         "正在优化你的照片",
@@ -19,7 +20,7 @@ struct AIProcessingView: View {
         VStack {
             Spacer()
             
-            selectedImage
+            Image(uiImage: selectedImage)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 200, height: 200)
@@ -77,8 +78,10 @@ struct AIProcessingView: View {
         .onAppear {
             startProcessingAnimation()
         }
-        .sheet(isPresented: $showAIBeautyEditor) {
-            AIBeautyEditorView(image: selectedImage)
+        .fullScreenCover(isPresented: $showAIBeautyEditor, onDismiss: {
+            presentationMode.wrappedValue.dismiss()
+        }) {
+            AIBeautyEditorView(uiImage: selectedImage)
         }
     }
     
@@ -88,13 +91,9 @@ struct AIProcessingView: View {
                 processingStep += 1
             } else {
                 timer.invalidate()
-                // Simulate random success/failure
-                if Bool.random() { // 50% chance of failure
-                    processingFailed = true
-                    processingStep = 0 // Reset message for failure state
-                } else {
-                    showAIBeautyEditor = true
-                }
+                // The beauty engine runs on device inside the editor, so always continue.
+                // Set processingFailed = true here to show the retry UI for real errors.
+                showAIBeautyEditor = true
             }
         }
     }
@@ -102,6 +101,6 @@ struct AIProcessingView: View {
 
 struct AIProcessingView_Previews: PreviewProvider {
     static var previews: some View {
-        AIProcessingView(selectedImage: Image(systemName: "photo.fill"))
+        AIProcessingView(selectedImage: UIImage(systemName: "photo.fill") ?? UIImage())
     }
 }

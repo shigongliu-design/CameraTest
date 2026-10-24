@@ -8,9 +8,15 @@ struct PhotoPickerView: View {
     @State private var sheetView: SheetView?
     @State private var selectedImage: UIImage? = nil
     @State private var processedImage: Image? = nil
+    @State private var pendingBeautyImage: UIImage? = nil
     
     let selectionLimit: Int // 1 for single, >1 for multi
     let mode: PhotoPickerMode
+    /// The editor tab to open after cropping. `.ai` runs the AI 美化 flow;
+    /// other tabs (from the home quick tools) open the editor directly.
+    var initialTab: EditorTab = .ai
+    /// 消除 from the home screen: skip cropping and open the eraser on the whole photo.
+    var openEraser: Bool = false
     
     enum PhotoPickerMode {
         case aiBeautify
@@ -64,18 +70,31 @@ struct PhotoPickerView: View {
                 }
                 
 
-                .sheet(item: $sheetView) { item in
+                .sheet(item: $sheetView, onDismiss: {
+                    // After cropping in AI 美化 mode, open the processing → editor flow.
+                    if let image = pendingBeautyImage {
+                        pendingBeautyImage = nil
+                        sheetView = initialTab == .ai ? .process(image) : .edit(image, initialTab)
+                    }
+                }) { item in
                     switch item {
                     case .crop(let image):
                         SwiftyCropView(image: image, maskShape: .square, config: SwiftyCropConfig(onCrop: { croppedImage in
-                            if let croppedImage = croppedImage {
+                            guard let croppedImage = croppedImage else { return }
+                            if mode == .aiBeautify {
+                                pendingBeautyImage = croppedImage
+                            } else {
                                 let imageSaver = PhotoSaver()
                                 imageSaver.writeToPhotoAlbum(image: croppedImage)
+                                presentationMode.wrappedValue.dismiss()
                             }
-                            presentationMode.wrappedValue.dismiss()
                         }))
                     case .process(let image):
                         AIProcessingView(selectedImage: image)
+                    case .edit(let image, let tab):
+                        AIBeautyEditorView(uiImage: image, initialTab: tab)
+                    case .erase(let image):
+                        EraseView(image: image)
                     }
                 }
             }
@@ -94,7 +113,7 @@ struct PhotoPickerView: View {
                 for item in selectedItems {
                     if let data = try? await item.loadTransferable(type: Data.self) {
                         if let uiImage = UIImage(data: data) {
-                            sheetView = .crop(uiImage)
+                            sheetView = openEraser ? .erase(uiImage) : .crop(uiImage)
                         }
                     }
                 }
